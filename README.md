@@ -72,6 +72,24 @@ try session.setActive(true)
 
 The app requires a server endpoint that extracts YouTube audio stream information. I included in the repository the python script I used (yt_audio_info.py) for fetching this information:
 
+### Required Tools on the Server
+
+- `yt-dlp` (YouTube extractor)
+- `ffmpeg` (recommended for muxing/remuxing and HLS support)
+
+Install on macOS using Homebrew:
+
+```bash
+brew install yt-dlp ffmpeg
+```
+
+Install on Linux (Debian/Ubuntu):
+
+```bash
+sudo apt update && sudo apt install -y ffmpeg
+python3 -m pip install --upgrade yt-dlp
+```
+
 ### Endpoint
 
 ```
