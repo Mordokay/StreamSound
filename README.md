@@ -70,7 +70,7 @@ try session.setActive(true)
 
 ## Server Requirements
 
-The app requires a server endpoint that extracts YouTube audio stream information:
+The app requires a server endpoint that extracts YouTube audio stream information. I included in the repository the python script I used (yt_audio_info.py) for fetching this information:
 
 ### Endpoint
 
