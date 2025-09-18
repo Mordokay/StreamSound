@@ -25,6 +25,16 @@ final class YouTubeAudioService {
         do {
             let decoder = JSONDecoder()
             let info = try decoder.decode(YouTubeAudioInfo.self, from: data)
+            
+            // Debug: Print the audio info we received
+            print("DEBUG: Received audio info:")
+            print("  - Title: \(info.title ?? "nil")")
+            print("  - Uploader: \(info.uploader ?? "nil")")
+            print("  - Duration: \(info.duration ?? 0)")
+            print("  - Extension: \(info.ext ?? "nil")")
+            print("  - Stream URL: \(info.streamURL?.absoluteString ?? "nil")")
+            print("  - Prefer HLS: \(info.preferHls ?? false)")
+            
             return info
         } catch {
             throw YouTubeAudioServiceError.decodingFailed

@@ -8,6 +8,7 @@ struct MainListView: View {
     @State private var pastedURLText: String = ""
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
+    @StateObject private var downloadService = AudioDownloadService()
     private let service = YouTubeAudioService()
 
     var body: some View {
@@ -47,14 +48,56 @@ struct MainListView: View {
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
+                                
+                                // Download status indicator
+                                if item.isDownloaded {
+                                    HStack(spacing: 2) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                            .font(.caption2)
+                                        Text("Downloaded")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                } else if downloadService.isDownloading(item) {
+                                    HStack(spacing: 2) {
+                                        ProgressView()
+                                            .scaleEffect(0.4)
+                                        Text("Downloading...")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
                             }
                             
                             Spacer()
                         }
                         .padding(.vertical, 2)
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        // Delete button (always available)
+                        Button(role: .destructive, action: { deleteItem(item) }) {
+                            Label("Delete", systemImage: "trash.fill")
+                        }
+                        
+                        // Download/Delete local file button
+                        if item.isDownloaded {
+                            Button(action: { downloadService.deleteLocalFile(for: item) }) {
+                                Label("Remove Download", systemImage: "arrow.up.circle.fill")
+                            }
+                            .tint(.orange)
+                        } else if !downloadService.isDownloading(item) {
+                            Button(action: { 
+                                Task { 
+                                    try? await downloadService.downloadAudio(for: item) 
+                                } 
+                            }) {
+                                Label("Download", systemImage: "arrow.down.circle.fill")
+                            }
+                            .tint(.blue)
+                        }
+                    }
                 }
-                .onDelete(perform: delete)
             }
             .listStyle(.plain)
             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -115,10 +158,11 @@ struct MainListView: View {
         }
     }
 
-    private func delete(at offsets: IndexSet) {
-        for index in offsets {
-            modelContext.delete(items[index])
-        }
+    private func deleteItem(_ item: YouTubeAudio) {
+        // Delete local file if it exists
+        downloadService.deleteLocalFile(for: item)
+        // Delete from database
+        modelContext.delete(item)
         try? modelContext.save()
     }
 }

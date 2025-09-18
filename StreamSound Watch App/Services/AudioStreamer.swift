@@ -15,6 +15,7 @@ final class AudioStreamer: NSObject, ObservableObject {
     private var itemStatusObserver: NSKeyValueObservation?
     private var bufferEmptyObserver: NSKeyValueObservation?
     private var likelyToKeepUpObserver: NSKeyValueObservation?
+    private var stalledTickCount: Int = 0
 
     func configureSession() throws {
         let session = AVAudioSession.sharedInstance()
@@ -23,7 +24,10 @@ final class AudioStreamer: NSObject, ObservableObject {
     }
 
     func startStreaming(from url: URL, title: String?, artist: String?, artworkURL: URL?, expectedDuration: Double? = nil) {
-        do { try configureSession() } catch { }
+        print("DEBUG: Starting stream from URL: \(url)")
+        do { try configureSession() } catch { 
+            print("DEBUG: Failed to configure session: \(error)")
+        }
 
         // Stop and clear previous player
         stop()
@@ -36,20 +40,35 @@ final class AudioStreamer: NSObject, ObservableObject {
         
         let item = AVPlayerItem(url: url)
         player = AVPlayer(playerItem: item)
+        player?.automaticallyWaitsToMinimizeStalling = false
+        player?.volume = 1.0
 
         addPeriodicTimeObserver()
         observeBuffering(for: item)
         setupRemoteCommands()
         updateNowPlaying(title: title, artist: artist, artworkURL: artworkURL)
 
+        print("DEBUG: Calling player.play() (timeControlStatus=\(player?.timeControlStatus.rawValue ?? -1))")
         player?.play()
         isPlaying = true
+        print("DEBUG: Player state - isPlaying: \(isPlaying), player: \(player != nil)")
     }
 
     func toggle() {
-        guard let player else { return }
-        if isPlaying { player.pause() } else { player.play() }
+        guard let player else { 
+            print("DEBUG: Toggle called but no player")
+            return 
+        }
+        print("DEBUG: Toggle - was playing: \(isPlaying)")
+        if isPlaying { 
+            player.pause() 
+            print("DEBUG: Paused player")
+        } else { 
+            player.play() 
+            print("DEBUG: Started player")
+        }
         isPlaying.toggle()
+        print("DEBUG: Toggle - now playing: \(isPlaying)")
         updatePlaybackState()
     }
 
@@ -82,8 +101,24 @@ final class AudioStreamer: NSObject, ObservableObject {
         clearObservers()
         timeObserver = player?.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 1), queue: .main) { [weak self] time in
             guard let self else { return }
+            let tcs = self.player?.timeControlStatus.rawValue ?? -1
+            print("DEBUG: Time observer - currentTime: \(time.seconds), isPlaying: \(self.isPlaying), timeControlStatus: \(tcs)")
             self.currentTime = time.seconds
             self.updatePlaybackState()
+
+            // If player claims to be playing but time is stuck near 0, try to kick it
+            if self.isPlaying {
+                if time.seconds < 0.1 {
+                    self.stalledTickCount += 1
+                } else {
+                    self.stalledTickCount = 0
+                }
+                if self.stalledTickCount >= 3 { // ~3 seconds without progress
+                    print("DEBUG: Detected stalled playback at 0s. Retrying play().")
+                    self.player?.play()
+                    self.stalledTickCount = 0
+                }
+            }
         }
         // Load duration using modern API to avoid deprecated `asset.duration`
         if let asset = player?.currentItem?.asset {
@@ -130,21 +165,34 @@ final class AudioStreamer: NSObject, ObservableObject {
     private func observeBuffering(for item: AVPlayerItem) {
         itemStatusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             guard let self else { return }
+            print("DEBUG: Item status changed to: \(item.status.rawValue)")
             switch item.status {
             case .readyToPlay:
+                print("DEBUG: Item ready to play")
                 self.isBuffering = false
-            case .failed, .unknown:
+            case .failed:
+                print("DEBUG: Item failed to load: \(item.error?.localizedDescription ?? "Unknown error")")
+                self.isBuffering = true
+            case .unknown:
+                print("DEBUG: Item status unknown")
                 self.isBuffering = true
             @unknown default:
+                print("DEBUG: Item status unknown default")
                 self.isBuffering = true
             }
         }
 
         bufferEmptyObserver = item.observe(\.isPlaybackBufferEmpty, options: [.initial, .new]) { [weak self] _, change in
-            if let empty = change.newValue, empty == true { self?.isBuffering = true }
+            if let empty = change.newValue, empty == true { 
+                print("DEBUG: Buffer empty")
+                self?.isBuffering = true 
+            }
         }
         likelyToKeepUpObserver = item.observe(\.isPlaybackLikelyToKeepUp, options: [.initial, .new]) { [weak self] _, change in
-            if let keepUp = change.newValue, keepUp == true { self?.isBuffering = false }
+            if let keepUp = change.newValue, keepUp == true { 
+                print("DEBUG: Playback likely to keep up")
+                self?.isBuffering = false 
+            }
         }
     }
 

@@ -90,6 +90,37 @@ struct AudioPlayerView: View {
     }
 
     private func configureAndPlay() {
+        // Check if we have a local file first (handle filename-only storage)
+        if let stored = audio.localFilePath {
+            let localURL: URL
+            if stored.hasPrefix("/") {
+                localURL = URL(fileURLWithPath: stored)
+            } else {
+                let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                localURL = docs.appendingPathComponent(stored)
+            }
+            print("DEBUG: Playing local file: \(localURL.path)")
+            print("DEBUG: File exists: \(FileManager.default.fileExists(atPath: localURL.path))")
+            print("DEBUG: File extension: \(localURL.pathExtension)")
+            
+            // Check if file is readable
+            do {
+                let attributes = try FileManager.default.attributesOfItem(atPath: localURL.path)
+                print("DEBUG: File size: \(attributes[.size] as? Int64 ?? 0) bytes")
+            } catch {
+                print("DEBUG: Error reading file attributes: \(error)")
+            }
+            
+            // Only play local if it actually exists
+            if FileManager.default.fileExists(atPath: localURL.path) {
+                let expected = audio.duration != nil ? Double(audio.duration!) : nil
+                streamer.startStreaming(from: localURL, title: audio.title, artist: audio.uploader, artworkURL: URL(string: audio.thumbnailURL ?? ""), expectedDuration: expected)
+                return
+            } else {
+                print("DEBUG: Local file missing. Falling back to remote stream.")
+            }
+        }
+        
         // Refresh expired streams if needed
         if let expire = audio.expireTS, Date(timeIntervalSince1970: TimeInterval(expire)) < .now {
             Task { await refreshAndPlay() }
@@ -183,32 +214,26 @@ struct CustomSeekSlider: View {
                     .onChanged { value in
                         if !isDragging {
                             isDragging = true
-                            // Start from the current visual progress to avoid coordinate mismatches
+                            // Start from current progress for smooth dragging
                             startProgress = displayProgress
                         }
-                        // Use translation relative to start to avoid absolute location issues
+                        // Use translation relative to start for smooth dragging
                         let delta = value.translation.width / trackWidth
                         let newProgress = max(0, min(1, startProgress + delta))
                         dragProgress = newProgress
                         onScrubPreview?(newProgress * duration)
                     }
                     .onEnded { value in
-                        // Check if this was a tap (small translation) or a drag
-                        if abs(value.translation.width) < 5 {
-                            // It's a tap - jump directly to the tap position
-                            let tapX = value.startLocation.x
-                            let adjustedX = max(thumbRadius, min(thumbRadius + trackWidth, tapX))
-                            let newProgress = max(0, min(1, (adjustedX - thumbRadius) / trackWidth))
-                            let seekTime = newProgress * duration
-                            onSeek(seekTime)
-                        } else {
-                            // It's a drag - use the translation-based calculation
-                            let delta = value.translation.width / trackWidth
-                            let newProgress = max(0, min(1, startProgress + delta))
-                            let seekTime = newProgress * duration
-                            onSeek(seekTime)
+                        // Always use the translation-based calculation for consistent behavior
+                        let delta = value.translation.width / trackWidth
+                        let newProgress = max(0, min(1, startProgress + delta))
+                        let seekTime = newProgress * duration
+                        onSeek(seekTime)
+                        
+                        // Add a small delay before resetting drag state to prevent visual jump
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            isDragging = false
                         }
-                        isDragging = false
                     }
             )
         }

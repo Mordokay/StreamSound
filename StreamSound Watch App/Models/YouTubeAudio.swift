@@ -16,6 +16,8 @@ final class YouTubeAudio {
     var expireHuman: String?
     var preferHls: Bool?
     var addedAt: Date
+    var localFilePath: String?
+    var isDownloaded: Bool { localFilePath != nil }
 
     init(
         id: UUID = UUID(),
