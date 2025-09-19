@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import Combine
+import UIKit
 
 struct AudioPlayerView: View {
     let audio: YouTubeAudio
@@ -11,51 +12,28 @@ struct AudioPlayerView: View {
     @State private var duration: Double = 0
     @State private var isPlaying: Bool = false
     @State private var isBuffering: Bool = true
+    @State private var textOffset: CGFloat = 300.0
 
     var body: some View {
         VStack(spacing: 8) {
-            // Thumbnail with overlaid text
+            // Thumbnail with scrolling text
             if let thumbnailURL = audio.thumbnailURL {
-                ZStack {
-                    ThumbnailImage(urlString: thumbnailURL, originalURLString: audio.originalURL)
-                        .frame(height: 100)
-                        .clipped()
-                        .opacity(0.7)
-                    
-                    VStack(spacing: 4) {
-                        Text(audio.title ?? "Untitled")
-                            .font(.headline)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(4)
-                        
-                        if let uploader = audio.uploader {
-                            Text(uploader)
-                                .font(.caption)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 8)
-                                .background(Color.black.opacity(0.6))
-                                .cornerRadius(4)
-                        }
-                    }
-                }
+                ThumbnailImage(urlString: thumbnailURL, originalURLString: audio.originalURL)
+                    .frame(height: 60)
+                    .clipped()
+                    .opacity(0.7)
+                
+                let displayText = "\(audio.uploader ?? "") - \(audio.title ?? "Untitled")"
+                MarqueeText(displayText, textStyle: .body, separation: " **** ")
             } else {
                 // Fallback when no thumbnail
-                VStack(spacing: 4) {
-                    Text(audio.title ?? "Untitled")
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-                    if let uploader = audio.uploader {
-                        Text(uploader)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                let displayText = "\(audio.uploader ?? "") - \(audio.title ?? "Untitled")"
+                MarqueeText(displayText, textStyle: .body, separation: " **** ")
             }
             
-
+            Spacer()
+                .frame(width: 40, height: 3)
+                .background(.green.opacity(0.3))
             // Custom draggable seek slider
             VStack(spacing: 4) {
                 if streamer != nil {
@@ -88,18 +66,32 @@ struct AudioPlayerView: View {
                         .frame(height: 20)
                 }
             }
-
-            HStack(spacing: 16) {
+            
+            HStack(spacing: 4) {
                 if streamer != nil {
+                    // Skip backward 10 seconds
+                    Button(action: { streamer?.seek(by: -10) }) {
+                        Image(systemName: "gobackward.10")
+                    }
+                    .tint(.accentColor)
+                    
+                    // Play/Pause button
                     Button(action: { streamer?.toggle() }) {
                         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    }
+                    .tint(.accentColor)
+                    .font(.title2)
+                    
+                    // Skip forward 10 seconds
+                    Button(action: { streamer?.seek(by: 10) }) {
+                        Image(systemName: "goforward.10")
                     }
                     .tint(.accentColor)
                 }
             }
         }
         .onAppear { configureAndPlay() }
-        .onDisappear { 
+        .onDisappear {
             streamer?.stop()
             streamer = nil // Clean up the instance
         }
@@ -283,3 +275,96 @@ struct CustomSeekSlider: View {
 
 
 
+struct MarqueeText : View {
+    private let text: String
+    
+    private let font: UIFont
+    
+    private let separation: String
+    
+    private let scrollDurationFactor: CGFloat
+    
+    @State private var animate = false
+    
+    @State private var size = CGSize.zero
+    
+    private var scrollDuration: CGFloat {
+        stringWidth * scrollDurationFactor
+    }
+    
+    private var stringWidth: CGFloat {
+        (text + separation).widthOfString(usingFont: font)
+    }
+    
+    private func shouldAnimated(_ width: CGFloat) -> Bool {
+        width < stringWidth
+    }
+    
+    static private let defaultSeparation = " ++++ "
+    
+    static private let defaultScrollDurationFactor: CGFloat = 0.02
+    
+    init(_ text: String,
+         font: UIFont = .systemFont(ofSize: 14),
+         separation: String = defaultSeparation,
+         scrollDurationFactor: CGFloat = defaultScrollDurationFactor)         {
+        self.text = text
+        self.font = font
+        self.separation = separation
+        self.scrollDurationFactor = scrollDurationFactor
+        self.animate = animate
+    }
+    
+    init(_ text: String,
+         textStyle: UIFont.TextStyle,
+         separation: String = defaultSeparation,
+         scrollDurationFactor: CGFloat = defaultScrollDurationFactor)
+    {
+        self.init(text, font: .systemFont(ofSize: 14), separation: separation, scrollDurationFactor: scrollDurationFactor)
+    }
+    
+    var body : some View {
+        GeometryReader { geometry in
+            let shouldAnimated = shouldAnimated(geometry.size.width)
+            
+            scrollItem(offset: self.animate ? -stringWidth : 0)
+                .onAppear() {
+                    size = geometry.size
+                    if shouldAnimated  {
+                        self.animate = true
+                    }
+                }
+            
+            if shouldAnimated{
+                scrollItem(offset: self.animate ? 0 : stringWidth)
+            }
+        }
+    }
+    
+    private func scrollItem(offset: CGFloat) -> some View {
+        Text(text + separation)
+            .lineLimit(1)
+            .font(Font(uiFont: font))
+            .offset(x: offset, y: 0)
+            .animation(Animation.linear(duration: scrollDuration).repeatForever(autoreverses: false), value: animate)
+            .fixedSize(horizontal: true, vertical: true)
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 20, maxHeight: 20, alignment: .center)
+            .background(.black.opacity(0.4))
+           
+    }
+}
+
+private extension String {
+    
+    func widthOfString(usingFont font: UIFont) -> CGFloat {
+        let fontAttributes = [NSAttributedString.Key.font: font]
+        let size = self.size(withAttributes: fontAttributes)
+        return size.width
+    }
+}
+
+private extension Font {
+    init(uiFont: UIFont) {
+        self = Font(uiFont as CTFont)
+    }
+}
