@@ -193,6 +193,7 @@ struct CustomSeekSlider: View {
     @State private var dragProgress: Double = 0
     @State private var startProgress: Double = 0
     @State private var lastSeekTime: Double = 0
+    @State private var isSeeking = false
     
     private var progress: Double {
         guard duration > 0 else { return 0 }
@@ -202,12 +203,21 @@ struct CustomSeekSlider: View {
     private var displayProgress: Double {
         if isDragging {
             return dragProgress
-        } else {
-            // After dragging, use the last seeked time until currentTime updates
-            // But if currentTime has caught up, use the actual progress
+        } else if isSeeking {
+            // After dragging, show the seeked position until currentTime catches up
             let seekProgress = lastSeekTime / duration
             let actualProgress = progress
-            return abs(actualProgress - seekProgress) < 0.01 ? actualProgress : seekProgress
+            
+            // If currentTime has caught up to the seeked time, stop seeking
+            if abs(actualProgress - seekProgress) < 0.01 {
+                DispatchQueue.main.async {
+                    isSeeking = false
+                }
+            }
+            
+            return seekProgress
+        } else {
+            return progress
         }
     }
     
@@ -260,13 +270,19 @@ struct CustomSeekSlider: View {
                         let newProgress = max(0, min(1, startProgress + delta))
                         let seekTime = newProgress * duration
                         
-                        // Store the seeked time and update dragProgress
+                        // Store the seeked time and enter seeking state
                         lastSeekTime = seekTime
                         dragProgress = newProgress
+                        isDragging = false
+                        isSeeking = true
+                        
+                        // Perform the seek
                         onSeek(seekTime)
                         
-                        // Reset drag state immediately after seek
-                        isDragging = false
+                        // Reset seeking state after a short delay to allow currentTime to update
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            isSeeking = false
+                        }
                     }
             )
         }
