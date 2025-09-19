@@ -200,6 +200,7 @@ struct CustomSeekSlider: View {
     @State private var isDragging = false
     @State private var dragProgress: Double = 0
     @State private var startProgress: Double = 0
+    @State private var lastSeekTime: Double = 0
     
     private var progress: Double {
         guard duration > 0 else { return 0 }
@@ -207,7 +208,15 @@ struct CustomSeekSlider: View {
     }
     
     private var displayProgress: Double {
-        isDragging ? dragProgress : progress
+        if isDragging {
+            return dragProgress
+        } else {
+            // After dragging, use the last seeked time until currentTime updates
+            // But if currentTime has caught up, use the actual progress
+            let seekProgress = lastSeekTime / duration
+            let actualProgress = progress
+            return abs(actualProgress - seekProgress) < 0.01 ? actualProgress : seekProgress
+        }
     }
     
     var body: some View {
@@ -258,12 +267,14 @@ struct CustomSeekSlider: View {
                         let delta = value.translation.width / trackWidth
                         let newProgress = max(0, min(1, startProgress + delta))
                         let seekTime = newProgress * duration
+                        
+                        // Store the seeked time and update dragProgress
+                        lastSeekTime = seekTime
+                        dragProgress = newProgress
                         onSeek(seekTime)
                         
-                        // Add a small delay before resetting drag state to prevent visual jump
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            isDragging = false
-                        }
+                        // Reset drag state immediately after seek
+                        isDragging = false
                     }
             )
         }
