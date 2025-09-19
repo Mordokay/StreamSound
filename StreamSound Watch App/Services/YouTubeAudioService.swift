@@ -19,7 +19,18 @@ final class YouTubeAudioService {
         request.timeoutInterval = 30
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse else {
+            print("DEBUG: No HTTP response received")
+            throw YouTubeAudioServiceError.badResponse
+        }
+        
+        print("DEBUG: Server response - Status: \(http.statusCode), URL: \(http.url?.absoluteString ?? "unknown")")
+        
+        guard (200..<300).contains(http.statusCode) else {
+            print("DEBUG: Server error - Status: \(http.statusCode)")
+            if let responseData = String(data: data, encoding: .utf8) {
+                print("DEBUG: Server response body: \(responseData)")
+            }
             throw YouTubeAudioServiceError.badResponse
         }
         do {

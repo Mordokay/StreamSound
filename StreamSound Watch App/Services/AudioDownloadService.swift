@@ -29,7 +29,6 @@ final class AudioDownloadService: ObservableObject {
         downloadProgress[item.id] = 0.0
         
         do {
-            print("banana1")
             var localURL: URL
             do {
                 localURL = try await performDownload(from: streamURL, for: item)
@@ -43,11 +42,9 @@ final class AudioDownloadService: ObservableObject {
                     throw DownloadError.downloadFailed
                 }
             }
-            print("banana2")
             // Update the model with FILE NAME only
             item.localFilePath = localURL.lastPathComponent
             try? item.modelContext?.save()
-            print("banana3")
             downloadingItems.remove(item.id)
             downloadProgress.removeValue(forKey: item.id)
             
@@ -79,11 +76,11 @@ final class AudioDownloadService: ObservableObject {
         let (tempURL, response) = try await URLSession.shared.download(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("banana4: \(response)")
+            print("Failed to castn HTTPURLResponse for : \(response)")
             throw DownloadError.downloadFailed
         }
         guard httpResponse.statusCode == 200 else {
-            print("banana4: \(response)")
+            print("Failed to get a status code 200. Instead got: \(httpResponse.statusCode)")
             if httpResponse.statusCode == 403 { throw DownloadError.forbidden }
             throw DownloadError.downloadFailed
         }

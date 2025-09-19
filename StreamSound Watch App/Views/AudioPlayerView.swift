@@ -1,11 +1,16 @@
 import SwiftUI
 import AVFoundation
+import Combine
 
 struct AudioPlayerView: View {
     let audio: YouTubeAudio
 
-    @StateObject private var streamer = AudioStreamer()
+    @State private var streamer: AudioStreamer?
     @State private var previewTime: Double? = nil
+    @State private var currentTime: Double = 0
+    @State private var duration: Double = 0
+    @State private var isPlaying: Bool = false
+    @State private var isBuffering: Bool = true
 
     var body: some View {
         VStack(spacing: 8) {
@@ -53,43 +58,60 @@ struct AudioPlayerView: View {
 
             // Custom draggable seek slider
             VStack(spacing: 4) {
-                CustomSeekSlider(
-                    currentTime: streamer.currentTime,
-                    duration: streamer.duration,
-                    onScrubPreview: { time in
-                        previewTime = time
-                    },
-                    onSeek: { time in
-                        streamer.seekTo(time: time)
-                        previewTime = nil
+                if streamer != nil {
+                    CustomSeekSlider(
+                        currentTime: currentTime,
+                        duration: duration,
+                        onScrubPreview: { time in
+                            previewTime = time
+                        },
+                        onSeek: { time in
+                            streamer?.seekTo(time: time)
+                            previewTime = nil
+                        }
+                    )
+                    .frame(height: 20)
+                    
+                    HStack {
+                        Text(formatTime(previewTime ?? currentTime)).font(.caption2)
+                        Spacer()
+                        if isBuffering {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                        }
+                        Spacer()
+                        Text(formatTime(duration)).font(.caption2)
                     }
-                )
-                .frame(height: 20)
-                
-                HStack {
-                    Text(formatTime(previewTime ?? streamer.currentTime)).font(.caption2)
-                    Spacer()
-                    if streamer.isBuffering {
-                        ProgressView()
-                            .scaleEffect(0.6)
-                    }
-                    Spacer()
-                    Text(formatTime(streamer.duration)).font(.caption2)
+                } else {
+                    // Loading state
+                    ProgressView()
+                        .frame(height: 20)
                 }
             }
 
             HStack(spacing: 16) {
-                Button(action: { streamer.toggle() }) {
-                    Image(systemName: streamer.isPlaying ? "pause.fill" : "play.fill")
+                if streamer != nil {
+                    Button(action: { streamer?.toggle() }) {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    }
+                    .tint(.accentColor)
                 }
-                .tint(.accentColor)
             }
         }
         .onAppear { configureAndPlay() }
-        .onDisappear { streamer.stop() }
+        .onDisappear { 
+            streamer?.stop()
+            streamer = nil // Clean up the instance
+        }
+        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
+            updateUIFromStreamer()
+        }
     }
 
     private func configureAndPlay() {
+        // Create a new AudioStreamer instance each time
+        streamer = AudioStreamer()
+        
         // Check if we have a local file first (handle filename-only storage)
         if let stored = audio.localFilePath {
             let localURL: URL
@@ -114,7 +136,7 @@ struct AudioPlayerView: View {
             // Only play local if it actually exists
             if FileManager.default.fileExists(atPath: localURL.path) {
                 let expected = audio.duration != nil ? Double(audio.duration!) : nil
-                streamer.startStreaming(from: localURL, title: audio.title, artist: audio.uploader, artworkURL: URL(string: audio.thumbnailURL ?? ""), expectedDuration: expected)
+                streamer?.startStreaming(from: localURL, title: audio.title, artist: audio.uploader, artworkURL: URL(string: audio.thumbnailURL ?? ""), expectedDuration: expected)
                 return
             } else {
                 print("DEBUG: Local file missing. Falling back to remote stream.")
@@ -128,7 +150,7 @@ struct AudioPlayerView: View {
         }
         guard let urlString = audio.streamURL, let url = URL(string: urlString) else { return }
         let expected = audio.duration != nil ? Double(audio.duration!) : nil
-        streamer.startStreaming(from: url, title: audio.title, artist: audio.uploader, artworkURL: URL(string: audio.thumbnailURL ?? ""), expectedDuration: expected)
+        streamer?.startStreaming(from: url, title: audio.title, artist: audio.uploader, artworkURL: URL(string: audio.thumbnailURL ?? ""), expectedDuration: expected)
     }
 
     @MainActor
@@ -149,9 +171,17 @@ struct AudioPlayerView: View {
         }
         guard let urlString = audio.streamURL, let url = URL(string: urlString) else { return }
         let expected = audio.duration != nil ? Double(audio.duration!) : nil
-        streamer.startStreaming(from: url, title: audio.title, artist: audio.uploader, artworkURL: URL(string: audio.thumbnailURL ?? ""), expectedDuration: expected)
+        streamer?.startStreaming(from: url, title: audio.title, artist: audio.uploader, artworkURL: URL(string: audio.thumbnailURL ?? ""), expectedDuration: expected)
     }
 
+    private func updateUIFromStreamer() {
+        guard let streamer = streamer else { return }
+        currentTime = streamer.currentTime
+        duration = streamer.duration
+        isPlaying = streamer.isPlaying
+        isBuffering = streamer.isBuffering
+    }
+    
     private func formatTime(_ seconds: Double) -> String {
         guard seconds.isFinite && seconds >= 0 else { return "--:--" }
         let s = Int(seconds.rounded())

@@ -16,17 +16,52 @@ final class AudioStreamer: NSObject, ObservableObject {
     private var bufferEmptyObserver: NSKeyValueObservation?
     private var likelyToKeepUpObserver: NSKeyValueObservation?
     private var stalledTickCount: Int = 0
+    private var didScheduleSessionRetry: Bool = false
 
     func configureSession() throws {
         let session = AVAudioSession.sharedInstance()
+        
+        // Check if session is already configured correctly
+        if session.category == .playback && session.mode == .spokenAudio && session.isOtherAudioPlaying == false {
+            // Try to activate without deactivating first
+            do {
+                try session.setActive(true, options: [])
+                print("DEBUG: Successfully activated existing session")
+                return
+            } catch {
+                print("DEBUG: Failed to activate existing session, will reconfigure: \(error)")
+            }
+        }
+        
+        // Deactivate first to ensure clean state
+        do {
+            try session.setActive(false, options: [.notifyOthersOnDeactivation])
+            print("DEBUG: Deactivated existing session before reconfiguring")
+            // Longer delay to let the system clean up
+            Thread.sleep(forTimeInterval: 0.5)
+        } catch {
+            print("DEBUG: Deactivation failed (may not have been active): \(error)")
+        }
+        
+        // Configure and activate
         try session.setCategory(.playback, mode: .spokenAudio, options: [])
-        try session.setActive(true)
+        
+        // Try activation with different options
+        do {
+            try session.setActive(true, options: [])
+            print("DEBUG: Successfully configured and activated AVAudioSession")
+        } catch {
+            // If that fails, try without options
+            try session.setActive(true)
+            print("DEBUG: Successfully activated AVAudioSession without options")
+        }
     }
 
     func startStreaming(from url: URL, title: String?, artist: String?, artworkURL: URL?, expectedDuration: Double? = nil) {
         print("DEBUG: Starting stream from URL: \(url)")
         do { try configureSession() } catch { 
             print("DEBUG: Failed to configure session: \(error)")
+            scheduleSessionActivationRetry()
         }
 
         // Stop and clear previous player
@@ -93,7 +128,32 @@ final class AudioStreamer: NSObject, ObservableObject {
         player?.pause()
         isPlaying = false
         clearObservers()
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        
+        // Force deactivate session to ensure clean state for next use
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            print("DEBUG: Force deactivated session on stop")
+        } catch {
+            print("DEBUG: Failed to deactivate session on stop: \(error)")
+        }
+        
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        print("DEBUG: Stopped playback and deactivated session")
+    }
+    
+    func forceStop() {
+        player?.pause()
+        isPlaying = false
+        clearObservers()
+        
+        // Force deactivate session - only use this when completely done with audio
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            print("DEBUG: Force deactivated AVAudioSession")
+        } catch {
+            print("DEBUG: Failed to force deactivate AVAudioSession: \(error)")
+        }
+        
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
@@ -170,6 +230,10 @@ final class AudioStreamer: NSObject, ObservableObject {
             case .readyToPlay:
                 print("DEBUG: Item ready to play")
                 self.isBuffering = false
+                if self.player?.timeControlStatus != .playing {
+                    self.scheduleSessionActivationRetry()
+                    self.player?.play()
+                }
             case .failed:
                 print("DEBUG: Item failed to load: \(item.error?.localizedDescription ?? "Unknown error")")
                 self.isBuffering = true
@@ -192,6 +256,37 @@ final class AudioStreamer: NSObject, ObservableObject {
             if let keepUp = change.newValue, keepUp == true { 
                 print("DEBUG: Playback likely to keep up")
                 self?.isBuffering = false 
+            }
+        }
+    }
+
+    private func scheduleSessionActivationRetry() {
+        guard didScheduleSessionRetry == false else { return }
+        didScheduleSessionRetry = true
+        Task { [weak self] in
+            defer { self?.didScheduleSessionRetry = false }
+            
+            // Wait longer before first attempt to let system recover
+            try? await Task.sleep(nanoseconds: 2000_000_000) // Wait 2s
+            
+            for attempt in 1...3 {
+                do {
+                    try self?.configureSession()
+                    print("DEBUG: AVAudioSession activation retry succeeded (attempt \(attempt))")
+                    self?.player?.play()
+                    return
+                } catch {
+                    print("DEBUG: AVAudioSession activation retry failed (attempt \(attempt)): \(error)")
+                    
+                    // If it's a resource not available error, wait longer
+                    if let nsError = error as NSError?, nsError.code == 561145203 {
+                        let delay = UInt64(3000_000_000) * UInt64(attempt) // Wait 3s, 6s, 9s
+                        try? await Task.sleep(nanoseconds: delay)
+                    } else {
+                        let delay = UInt64(1000_000_000) * UInt64(attempt) // Wait 1s, 2s, 3s
+                        try? await Task.sleep(nanoseconds: delay)
+                    }
+                }
             }
         }
     }
