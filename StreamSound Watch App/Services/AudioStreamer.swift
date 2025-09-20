@@ -99,6 +99,11 @@ final class AudioStreamer: NSObject, ObservableObject {
             player.pause() 
             print("DEBUG: Paused player")
         } else { 
+            // Check if we're at the end of the audio
+            if duration > 0 && currentTime >= duration - 0.5 {
+                print("DEBUG: At end of audio, restarting from beginning")
+                seekTo(time: 0)
+            }
             player.play() 
             print("DEBUG: Started player")
         }
@@ -110,7 +115,16 @@ final class AudioStreamer: NSObject, ObservableObject {
     func seek(by seconds: Double) {
         guard let item = player?.currentItem else { return }
         let current = item.currentTime()
-        let target = CMTime(seconds: max(0, current.seconds + seconds), preferredTimescale: 1)
+        let newTime = current.seconds + seconds
+        
+        // If we're at the end and trying to skip forward, restart from beginning
+        if duration > 0 && currentTime >= duration - 0.5 && seconds > 0 {
+            print("DEBUG: At end of audio, restarting from beginning")
+            seekTo(time: 0)
+            return
+        }
+        
+        let target = CMTime(seconds: max(0, newTime), preferredTimescale: 1)
         player?.seek(to: target)
         currentTime = target.seconds
         updatePlaybackState()
@@ -163,7 +177,19 @@ final class AudioStreamer: NSObject, ObservableObject {
             guard let self else { return }
             let tcs = self.player?.timeControlStatus.rawValue ?? -1
             print("DEBUG: Time observer - currentTime: \(time.seconds), isPlaying: \(self.isPlaying), timeControlStatus: \(tcs)")
-            self.currentTime = time.seconds
+            
+            // Cap currentTime to duration to prevent going over
+            let cappedTime = min(time.seconds, self.duration)
+            self.currentTime = cappedTime
+            
+            // Check if we've reached the end of the audio
+            if self.duration > 0 && cappedTime >= self.duration - 0.5 { // 0.5 second tolerance
+                print("DEBUG: Reached end of audio, pausing playback")
+                self.player?.pause()
+                self.isPlaying = false
+                self.updatePlaybackState()
+            }
+            
             self.updatePlaybackState()
 
             // If player claims to be playing but time is stuck near 0, try to kick it

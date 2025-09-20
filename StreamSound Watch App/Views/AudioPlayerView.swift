@@ -13,6 +13,8 @@ struct AudioPlayerView: View {
     @State private var isPlaying: Bool = false
     @State private var isBuffering: Bool = true
     @State private var textOffset: CGFloat = 300.0
+    @State private var previousCurrentTime: Double = 0
+    @State private var sliderResetTrigger: Int = 0
 
     var body: some View {
         VStack(spacing: 8) {
@@ -48,10 +50,11 @@ struct AudioPlayerView: View {
                             previewTime = nil
                         }
                     )
+                    .id(sliderResetTrigger)
                     .frame(height: 20)
                     
                     HStack {
-                        Text(formatTime(previewTime ?? currentTime)).font(.caption2)
+                        Text(formatTime(previewTime ?? min(currentTime, duration))).font(.caption2)
                         Spacer()
                         if isBuffering {
                             ProgressView()
@@ -168,10 +171,21 @@ struct AudioPlayerView: View {
 
     private func updateUIFromStreamer() {
         guard let streamer = streamer else { return }
-        currentTime = streamer.currentTime
+        
+        // Check if we've restarted (jumped from near end to beginning)
+        let newCurrentTime = streamer.currentTime
+        if previousCurrentTime > 0 && duration > 0 && 
+           previousCurrentTime >= duration - 1.0 && newCurrentTime < 1.0 {
+            // We've restarted from the end, reset slider state
+            print("DEBUG: Detected restart, resetting slider state")
+            sliderResetTrigger += 1
+        }
+        
+        currentTime = newCurrentTime
         duration = streamer.duration
         isPlaying = streamer.isPlaying
         isBuffering = streamer.isBuffering
+        previousCurrentTime = newCurrentTime
     }
     
     private func formatTime(_ seconds: Double) -> String {
@@ -197,7 +211,9 @@ struct CustomSeekSlider: View {
     
     private var progress: Double {
         guard duration > 0 else { return 0 }
-        return min(max(currentTime / duration, 0), 1)
+        // Cap currentTime to duration to prevent slider from going over 100%
+        let cappedCurrentTime = min(currentTime, duration)
+        return min(max(cappedCurrentTime / duration, 0), 1)
     }
     
     private var displayProgress: Double {
