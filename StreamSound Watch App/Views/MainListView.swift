@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct MainListView: View {
     @Environment(\.modelContext) private var modelContext
@@ -11,8 +12,11 @@ struct MainListView: View {
     @StateObject private var downloadService = AudioDownloadService()
     private let service = YouTubeAudioService()
 
+    let thumbnailWidth: CGFloat = 60
+    let thumbnailHeight: CGFloat = 60
+    
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             HStack {
                 TextField("Paste YouTube URL", text: $pastedURLText)
                     .textInputAutocapitalization(.never)
@@ -28,49 +32,83 @@ struct MainListView: View {
             List {
                 ForEach(items) { item in
                     NavigationLink(destination: AudioPlayerView(audio: item)) {
-                        HStack(spacing: 8) {
-                            // Thumbnail on the left
-                            ThumbnailImage(urlString: item.thumbnailURL ?? "", originalURLString: item.originalURL)
-                                .frame(width: 50, height: 50)
-                                .clipped()
-                                .cornerRadius(4)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                // Title on the right
+                        HStack(alignment: .top, spacing: 8) {
+                                // Thumbnail on the left with duration and download overlays
+                                ZStack {
+                                    ThumbnailImage(urlString: item.thumbnailURL ?? "", originalURLString: item.originalURL)
+                                        .frame(width: thumbnailWidth, height: thumbnailHeight)
+                                        .clipped()
+                                        .cornerRadius(4)
+                                    
+                                    // Duration overlay at bottom right of thumbnail
+                                    if let duration = item.duration {
+                                        VStack {
+                                            Spacer()
+                                            HStack {
+                                                Spacer()
+                                                Text(formatDuration(duration))
+                                                    .font(.system(size: 16, weight: .semibold))
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 4)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.black.opacity(0.7))
+                                                    .cornerRadius(2)
+                                            }
+                                        }.frame(width: thumbnailWidth, height: thumbnailHeight)
+                                    }
+                                    
+                                    // Download checkmark at top right of thumbnail
+                                    if item.isDownloaded {
+                                        VStack {
+                                            HStack {
+                                                Spacer()
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundColor(.green)
+                                                    .font(.system(size: 16, weight: .semibold))
+                                                    .background(Color.white)
+                                                    .clipShape(Circle())
+                                            }
+                                            Spacer()
+                                        }.frame(width: thumbnailWidth, height: thumbnailHeight)
+                                    }
+                                    
+                                    // Download progress at top center of thumbnail
+                                    if downloadService.isDownloading(item) {
+                                        VStack {
+                                            HStack {
+                                                Spacer()
+                                                if let progress = downloadService.downloadProgress[item.id] {
+                                                    HStack(spacing: 4) {
+                                                        ProgressView()
+                                                            .frame(width: 8, height: 8)
+                                                        Text("\(Int(progress * 100))%")
+                                                            .font(.system(size: 13, weight: .semibold))
+                                                            .foregroundColor(.white)
+                                                            .padding(.horizontal, 4)
+                                                            .padding(.vertical, 2)
+                                                    }
+                                                    .frame(width: thumbnailWidth * 0.9, height: 20)
+                                                    .padding([.horizontal], 5)
+                                                    .background(Color.black.opacity(0.7))
+                                                    .cornerRadius(2)
+                                                } else {
+                                                    ProgressView()
+                                                        .frame(width: 15, height: 15)
+                                                }
+                                                Spacer()
+                                            }
+                                            Spacer()
+                                        }.frame(width: thumbnailWidth, height: thumbnailHeight)
+                                    }
+                                }
+                                
+                                // Title on the right side of thumbnail
                                 Text(item.title ?? "Untitled")
-                                    .font(.caption)
-                                    .lineLimit(2)
+                                .font(.system(size: 13, weight: .regular))
+                                    .lineLimit(4)
                                     .multilineTextAlignment(.leading)
                                 
-                                // Duration below thumbnail
-                                if let duration = item.duration {
-                                    Text(formatDuration(duration))
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                
-                                // Download status indicator
-                                if item.isDownloaded {
-                                    HStack(spacing: 2) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.green)
-                                            .font(.caption2)
-                                        Text("Downloaded")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                } else if downloadService.isDownloading(item) {
-                                    HStack(spacing: 2) {
-                                        ProgressView()
-                                            .scaleEffect(0.4)
-                                        Text("Downloading...")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                            
-                            Spacer()
+                                Spacer()
                         }
                         .padding(.vertical, 2)
                     }

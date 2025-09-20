@@ -16,8 +16,16 @@ final class AudioDownloadService: ObservableObject {
     @Published var downloadingItems: Set<UUID> = []
     @Published var downloadProgress: [UUID: Double] = [:]
     
+    private var progressObservations: [UUID: NSKeyValueObservation] = [:]
+    
     private let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     private let infoService = YouTubeAudioService()
+    
+    deinit {
+        // Clean up all observations
+        progressObservations.values.forEach { $0.invalidate() }
+        progressObservations.removeAll()
+    }
     
     func downloadAudio(for item: YouTubeAudio) async throws {
         guard let streamURLString = item.streamURL,
@@ -47,10 +55,14 @@ final class AudioDownloadService: ObservableObject {
             try? item.modelContext?.save()
             downloadingItems.remove(item.id)
             downloadProgress.removeValue(forKey: item.id)
+            progressObservations[item.id]?.invalidate()
+            progressObservations.removeValue(forKey: item.id)
             
         } catch {
             downloadingItems.remove(item.id)
             downloadProgress.removeValue(forKey: item.id)
+            progressObservations[item.id]?.invalidate()
+            progressObservations.removeValue(forKey: item.id)
             throw error
         }
     }
@@ -72,11 +84,11 @@ final class AudioDownloadService: ObservableObject {
             return localURL
         }
         
-        // Download the file
-        let (tempURL, response) = try await URLSession.shared.download(from: url)
+        // Download the file with progress tracking
+        let (tempURL, response) = try await downloadWithProgress(from: url, for: item)
         
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("Failed to castn HTTPURLResponse for : \(response)")
+            print("Failed to cast HTTPURLResponse for : \(response)")
             throw DownloadError.downloadFailed
         }
         guard httpResponse.statusCode == 200 else {
@@ -92,6 +104,60 @@ final class AudioDownloadService: ObservableObject {
         print("DEBUG: File size: \(try? FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64 ?? 0) bytes")
         
         return localURL
+    }
+    
+    private func downloadWithProgress(from url: URL, for item: YouTubeAudio) async throws -> (URL, URLResponse) {
+        let request = URLRequest(url: url)
+        let itemID = item.id
+        
+        return try await withCheckedThrowingContinuation { [weak self] continuation in
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let data = data, let response = response else {
+                    continuation.resume(throwing: DownloadError.downloadFailed)
+                    return
+                }
+                
+                // Write data to temporary file
+                do {
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    try data.write(to: tempURL)
+                    
+                    // Update final progress
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        
+                        self.downloadProgress[itemID] = 1.0
+
+                        // Clean up observation
+                        self.progressObservations[itemID]?.invalidate()
+                        self.progressObservations.removeValue(forKey: itemID)
+                    }
+                    
+                    continuation.resume(returning: (tempURL, response))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+            
+            // Set up progress observation
+            let observation = task.progress.observe(\.fractionCompleted) { progress, _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.downloadProgress[itemID] = progress.fractionCompleted
+                }
+            }
+            
+            // Store observation for cleanup
+            self?.progressObservations[itemID] = observation
+            
+            // Start the download
+            task.resume()
+        }
     }
 
     // MARK: - Filename Sanitization
@@ -155,6 +221,7 @@ final class AudioDownloadService: ObservableObject {
     func getDownloadProgress(_ item: YouTubeAudio) -> Double {
         downloadProgress[item.id] ?? 0.0
     }
+    
 
     // MARK: - Refresh helpers
     private func refreshIfNeeded(_ item: YouTubeAudio) async {
@@ -184,3 +251,4 @@ final class AudioDownloadService: ObservableObject {
         }
     }
 }
+
