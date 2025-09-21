@@ -31,16 +31,18 @@ struct AudioPlayerView: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 8) {
+            VStack(spacing: 2) {
                 // Thumbnail with scrolling text
                 if let thumbnailURL = audio.thumbnailURL {
                     ThumbnailImage(urlString: thumbnailURL, originalURLString: audio.originalURL)
-                        .frame(height: 60)
+                        .frame(height: 110)
                         .clipped()
-                        .opacity(0.7)
+//                        .background(.green.opacity(0.3))
+//                        .opacity(0.7)
                     
                     let displayText = "\(audio.uploader ?? "") - \(audio.title ?? "Untitled")"
                     MarqueeText(displayText, textStyle: .body, separation: " **** ")
+//                        .background(.red.opacity(0.3))
                 } else {
                     // Fallback when no thumbnail
                     let displayText = "\(audio.uploader ?? "") - \(audio.title ?? "Untitled")"
@@ -48,7 +50,7 @@ struct AudioPlayerView: View {
                 }
 
                 // Custom draggable seek slider
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     if streamer != nil {
                         CustomSeekSlider(
                             currentTime: currentTime,
@@ -61,11 +63,13 @@ struct AudioPlayerView: View {
                                 previewTime = nil
                             }
                         )
-                        .id(sliderResetTrigger)
                         .frame(height: 20)
+//                        .background(.blue.opacity(0.3))
+                        .id(sliderResetTrigger)
                         
                         HStack {
                             Text(formatTime(previewTime ?? min(currentTime, duration))).font(.caption2)
+                                .frame(height: 15)
                             Spacer()
                             if isBuffering {
                                 ProgressView()
@@ -73,7 +77,9 @@ struct AudioPlayerView: View {
                             }
                             Spacer()
                             Text(formatTime(duration)).font(.caption2)
+                                .frame(height: 15)
                         }
+//                        .background(.purple.opacity(0.3))
                     } else {
                         // Loading state
                         ProgressView()
@@ -130,7 +136,10 @@ struct AudioPlayerView: View {
                         }, perform: {})
                     }
                 }
+                Spacer()
+                    .frame(width: 50, height: 20)
             }
+            .ignoresSafeArea(edges: [.top])
             
             // Custom volume slider positioned on the right side
             HStack {

@@ -11,6 +11,7 @@ struct MainListView: View {
     @State private var errorMessage: String?
     @StateObject private var downloadService = AudioDownloadService()
     private let service = YouTubeAudioService()
+    private let thumbnailCacheService = ThumbnailCacheService()
 
     let thumbnailWidth: CGFloat = 60
     let thumbnailHeight: CGFloat = 60
@@ -196,9 +197,20 @@ struct MainListView: View {
     private func deleteItem(_ item: YouTubeAudio) {
         // Delete local file if it exists
         downloadService.deleteLocalFile(for: item)
+        
+        // Delete cached thumbnail if it exists
+        if let videoID = extractVideoID(from: item.originalURL) {
+            thumbnailCacheService.deleteCachedThumbnail(for: videoID)
+        }
+        
         // Delete from database
         modelContext.delete(item)
         try? modelContext.save()
+    }
+    
+    private func extractVideoID(from urlString: String) -> String? {
+        let pattern = "[A-Za-z0-9_-]{11}"
+        return urlString.range(of: pattern, options: .regularExpression).map { String(urlString[$0]) }
     }
 }
 

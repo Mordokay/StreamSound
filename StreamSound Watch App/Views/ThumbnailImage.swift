@@ -1,9 +1,15 @@
 import SwiftUI
 
-// MARK: - Thumbnail with WebP -> JPEG fallback
+// MARK: - Thumbnail with raw data caching
 struct ThumbnailImage: View {
     let urlString: String
     let originalURLString: String
+    
+    @State private var imageData: Data?
+    @State private var isLoading: Bool = true
+    @State private var loadError: Error?
+    
+    private let cacheService = ThumbnailCacheService()
 
     private func fallbackURL() -> URL? {
         // 1) Try simple WebP -> JPG replacement used by YouTube
@@ -26,54 +32,94 @@ struct ThumbnailImage: View {
     }
 
     private func extractYouTubeID(from text: String) -> String? {
-        // Look for 11-char ID
+        // Look for 11-char YouTube video ID anywhere in the text
         let pattern = "[A-Za-z0-9_-]{11}"
-        return text.range(of: pattern, options: .regularExpression).map { String(text[$0]) }
+        do {
+            let regex = try NSRegularExpression(pattern: pattern)
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            if let match = regex.firstMatch(in: text, range: range) {
+                if let matchRange = Range(match.range, in: text) {
+                    return String(text[matchRange])
+                }
+            }
+        } catch {
+            // If regex fails to compile, fall back to nil
+        }
+        return nil
     }
 
     var body: some View {
-        let primary = URL(string: urlString)
-        let fallback = fallbackURL()
-        if let primary {
-            asyncImageView(url: primary, fallback: fallback)
-        } else if let fallback {
-            simpleAsyncImage(url: fallback)
-        } else {
-            Rectangle().fill(Color.gray.opacity(0.3))
+        Group {
+            if let data = imageData {
+                // Show image from cached data
+                if let uiImage = UIImage(data: data) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    placeholder
+                }
+            } else if isLoading {
+                // Show loading state
+                placeholder
+            } else {
+                // Show fallback or error
+                placeholder
+            }
+        }
+        .onAppear {
+            loadThumbnail()
         }
     }
-
-    @ViewBuilder
-    private func asyncImageView(url: URL, fallback: URL?) -> some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().aspectRatio(contentMode: .fill)
-            case .failure:
-                if let fallback { simpleAsyncImage(url: fallback) } else { placeholder }
-            case .empty:
-                placeholder
-            @unknown default:
-                placeholder
+    
+    private func loadThumbnail() {
+        guard let videoID = extractYouTubeID(from: originalURLString) else {
+            isLoading = false
+            return
+        }
+        
+        // Check if we have cached data
+        if let cachedData = cacheService.getCachedImageData(for: videoID) {
+            print("DEBUG: Using cached thumbnail data for video: \(videoID) and data: \(cachedData.count) bytes")
+            
+            // Try to create UIImage from cached data
+            if UIImage(data: cachedData) != nil {
+                imageData = cachedData
+                isLoading = false
+                return
+            } else {
+                print("DEBUG: Cached data is not a valid image format, will try to re-download")
+            }
+        }
+        
+        // Download and cache the thumbnail
+        Task {
+            do {
+                let primaryURL = urlString
+                let fallbackURL = fallbackURL()?.absoluteString ?? urlString
+                
+                print("DEBUG: ThumbnailImage - Video ID: \(videoID)")
+                print("DEBUG: ThumbnailImage - Primary URL: \(primaryURL)")
+                print("DEBUG: ThumbnailImage - Fallback URL: \(fallbackURL)")
+                
+                // Try primary URL first, then fallback
+                let data = try await cacheService.getImageData(for: videoID, primaryURL: primaryURL, fallbackURL: fallbackURL)
+                
+                await MainActor.run {
+                    imageData = data
+                    isLoading = false
+                }
+            } catch {
+                print("DEBUG: Failed to load thumbnail: \(error)")
+                await MainActor.run {
+                    loadError = error
+                    isLoading = false
+                }
             }
         }
     }
 
-    @ViewBuilder
-    private func simpleAsyncImage(url: URL) -> some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().aspectRatio(contentMode: .fill)
-            case .empty:
-                placeholder
-            case .failure:
-                placeholder
-            @unknown default:
-                placeholder
-            }
-        }
+    private var placeholder: some View { 
+        Rectangle().fill(Color.gray.opacity(0.3))
     }
-
-    private var placeholder: some View { Rectangle().fill(Color.gray.opacity(0.3)) }
 }

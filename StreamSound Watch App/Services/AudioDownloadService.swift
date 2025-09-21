@@ -68,6 +68,60 @@ final class AudioDownloadService: ObservableObject {
     }
     
     private func performDownload(from url: URL, for item: YouTubeAudio) async throws -> URL {
+        // Check if this is an HLS stream (.m3u8) - these can't be downloaded directly
+        if url.absoluteString.contains(".m3u8") {
+            print("DEBUG: HLS stream detected, falling back to direct audio stream")
+            // Try to get a direct audio stream instead
+            let info = try await infoService.fetchInfo(for: item.originalURL, maxAbr: 64, preferHls: false)
+            guard let directURL = info.streamURL else {
+                throw DownloadError.downloadFailed
+            }
+            return try await performDownload(from: directURL, for: item)
+        }
+        
+        // Check if this is a WebM file - reject it and try to get M4A instead
+        if item.fileExtension?.lowercased() == "webm" {
+            print("DEBUG: WebM format detected, falling back to M4A format")
+            
+            // Try multiple fallback strategies
+            let fallbackStrategies = [
+                (maxAbr: 32, preferHls: false),  // Lower bitrate, direct stream
+                (maxAbr: 64, preferHls: true),   // Higher bitrate, HLS stream
+                (maxAbr: 128, preferHls: false), // Even higher bitrate, direct stream
+                (maxAbr: 0, preferHls: false)    // No bitrate limit, direct stream
+            ]
+            
+            for (index, strategy) in fallbackStrategies.enumerated() {
+                print("DEBUG: Trying fallback strategy \(index + 1): maxAbr=\(strategy.maxAbr), preferHls=\(strategy.preferHls)")
+                
+                do {
+                    let info = try await infoService.fetchInfo(for: item.originalURL, maxAbr: strategy.maxAbr, preferHls: strategy.preferHls)
+                    
+                    // Check if we got a valid non-WebM format
+                    if let streamURL = info.streamURL, 
+                       let ext = info.ext?.lowercased(),
+                       ext != "webm" && ext != "opus" {
+                        print("DEBUG: Fallback strategy \(index + 1) succeeded: ext=\(ext), acodec=\(info.acodec ?? "unknown")")
+                        
+                        // Update the item with the new format info
+                        item.fileExtension = info.ext
+                        item.streamURL = info.streamURL?.absoluteString
+                        try? item.modelContext?.save()
+                        return try await performDownload(from: streamURL, for: item)
+                    } else {
+                        print("DEBUG: Fallback strategy \(index + 1) returned WebM/Opus, trying next...")
+                    }
+                } catch {
+                    print("DEBUG: Fallback strategy \(index + 1) failed: \(error)")
+                    continue
+                }
+            }
+            
+            // If all fallback strategies failed
+            print("DEBUG: All fallback strategies failed, throwing download error")
+            throw DownloadError.downloadFailed
+        }
+        
         // Create filename: 11-char YouTube ID + extension
         let videoID = extractVideoID(from: item.originalURL) ?? "unknown"
         let ext = sanitizeExtension(item.fileExtension ?? "m4a") // Use the actual extension from server
@@ -101,7 +155,8 @@ final class AudioDownloadService: ObservableObject {
         try FileManager.default.moveItem(at: tempURL, to: localURL)
         
         print("DEBUG: Download completed successfully")
-        print("DEBUG: File size: \(try? FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64 ?? 0) bytes")
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
+        print("DEBUG: File size: \(fileSize) bytes")
         
         return localURL
     }
@@ -176,6 +231,12 @@ final class AudioDownloadService: ObservableObject {
         let lower = input.lowercased()
         // Only allow known audio/container extensions AVPlayer on watchOS typically supports
         let allowed = ["m4a", "mp4", "aac", "mp3", "mov", "m3u8"]
+        
+        // If the input is WebM, convert to M4A since WebM isn't supported on watchOS
+        if lower == "webm" {
+            return "m4a"
+        }
+        
         return allowed.contains(lower) ? lower : "m4a"
     }
     
@@ -233,7 +294,7 @@ final class AudioDownloadService: ObservableObject {
 
     private func refreshItem(_ item: YouTubeAudio) async {
         do {
-            // Use the default service method (Opus up to 64 kbps) for refresh
+            // Use the default service method (HLS M4A/AAC up to 64 kbps) for refresh
             // This maintains consistency with the original download settings
             let info = try await infoService.fetchInfo(for: item.originalURL)
             

@@ -9,7 +9,7 @@ enum YouTubeAudioServiceError: Error {
 final class YouTubeAudioService {
     private let baseEndpoint = "https://mordokay.com/cgi-bin/yt_audio_info.py"
 
-    /// Fetches audio information for a YouTube URL with default settings (Opus up to 64 kbps)
+    /// Fetches audio information for a YouTube URL with default settings (M4A up to 64 kbps)
     /// - Parameter originalURLString: The YouTube URL or video ID
     /// - Returns: YouTubeAudioInfo containing audio metadata and stream URL
     func fetchInfo(for originalURLString: String) async throws -> YouTubeAudioInfo {
@@ -44,6 +44,9 @@ final class YouTubeAudioService {
         
         components.queryItems = queryItems
         guard let url = components.url else { throw YouTubeAudioServiceError.invalidURL }
+
+        print("DEBUG: Making request to: \(url.absoluteString)")
+        print("DEBUG: Request parameters - maxAbr: \(maxAbr), preferHls: \(preferHls)")
 
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
