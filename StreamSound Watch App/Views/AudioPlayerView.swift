@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import Combine
 import UIKit
+import WatchKit
 
 struct AudioPlayerView: View {
     let audio: YouTubeAudio
@@ -15,88 +16,114 @@ struct AudioPlayerView: View {
     @State private var textOffset: CGFloat = 300.0
     @State private var previousCurrentTime: Double = 0
     @State private var sliderResetTrigger: Int = 0
+    
+    // Volume control
+    @State private var volume: Double = 0.5
+    @State private var volumeObserver: NSKeyValueObservation?
+    @State private var isCustomWatchVolumeSliderHidden: Bool = true
+    @State private var controlsTimer: Timer? = nil
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Thumbnail with scrolling text
-            if let thumbnailURL = audio.thumbnailURL {
-                ThumbnailImage(urlString: thumbnailURL, originalURLString: audio.originalURL)
-                    .frame(height: 60)
-                    .clipped()
-                    .opacity(0.7)
-                
-                let displayText = "\(audio.uploader ?? "") - \(audio.title ?? "Untitled")"
-                MarqueeText(displayText, textStyle: .body, separation: " **** ")
-            } else {
-                // Fallback when no thumbnail
-                let displayText = "\(audio.uploader ?? "") - \(audio.title ?? "Untitled")"
-                MarqueeText(displayText, textStyle: .body, separation: " **** ")
-            }
-            
-            Spacer()
-                .frame(width: 40, height: 3)
-                .background(.green.opacity(0.3))
-            // Custom draggable seek slider
-            VStack(spacing: 4) {
-                if streamer != nil {
-                    CustomSeekSlider(
-                        currentTime: currentTime,
-                        duration: duration,
-                        onScrubPreview: { time in
-                            previewTime = time
-                        },
-                        onSeek: { time in
-                            streamer?.seekTo(time: time)
-                            previewTime = nil
-                        }
-                    )
-                    .id(sliderResetTrigger)
-                    .frame(height: 20)
+        ZStack {
+            VStack(spacing: 8) {
+                // Thumbnail with scrolling text
+                if let thumbnailURL = audio.thumbnailURL {
+                    ThumbnailImage(urlString: thumbnailURL, originalURLString: audio.originalURL)
+                        .frame(height: 60)
+                        .clipped()
+                        .opacity(0.7)
                     
-                    HStack {
-                        Text(formatTime(previewTime ?? min(currentTime, duration))).font(.caption2)
-                        Spacer()
-                        if isBuffering {
-                            ProgressView()
-                                .scaleEffect(0.6)
-                        }
-                        Spacer()
-                        Text(formatTime(duration)).font(.caption2)
-                    }
+                    let displayText = "\(audio.uploader ?? "") - \(audio.title ?? "Untitled")"
+                    MarqueeText(displayText, textStyle: .body, separation: " **** ")
                 } else {
-                    // Loading state
-                    ProgressView()
+                    // Fallback when no thumbnail
+                    let displayText = "\(audio.uploader ?? "") - \(audio.title ?? "Untitled")"
+                    MarqueeText(displayText, textStyle: .body, separation: " **** ")
+                }
+
+                // Custom draggable seek slider
+                VStack(spacing: 4) {
+                    if streamer != nil {
+                        CustomSeekSlider(
+                            currentTime: currentTime,
+                            duration: duration,
+                            onScrubPreview: { time in
+                                previewTime = time
+                            },
+                            onSeek: { time in
+                                streamer?.seekTo(time: time)
+                                previewTime = nil
+                            }
+                        )
+                        .id(sliderResetTrigger)
                         .frame(height: 20)
+                        
+                        HStack {
+                            Text(formatTime(previewTime ?? min(currentTime, duration))).font(.caption2)
+                            Spacer()
+                            if isBuffering {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                            }
+                            Spacer()
+                            Text(formatTime(duration)).font(.caption2)
+                        }
+                    } else {
+                        // Loading state
+                        ProgressView()
+                            .frame(height: 20)
+                    }
+                }
+                
+                HStack(spacing: 4) {
+                    if streamer != nil {
+                        // Skip backward 10 seconds
+                        Button(action: { streamer?.seek(by: -10) }) {
+                            Image(systemName: "gobackward.10")
+                        }
+                        .tint(.accentColor)
+                        
+                        // Play/Pause button
+                        Button(action: { streamer?.toggle() }) {
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                        }
+                        .tint(.accentColor)
+                        .font(.title2)
+                        
+                        // Skip forward 10 seconds
+                        Button(action: { streamer?.seek(by: 10) }) {
+                            Image(systemName: "goforward.10")
+                        }
+                        .tint(.accentColor)
+                    }
                 }
             }
             
-            HStack(spacing: 4) {
-                if streamer != nil {
-                    // Skip backward 10 seconds
-                    Button(action: { streamer?.seek(by: -10) }) {
-                        Image(systemName: "gobackward.10")
-                    }
-                    .tint(.accentColor)
-                    
-                    // Play/Pause button
-                    Button(action: { streamer?.toggle() }) {
-                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                    }
-                    .tint(.accentColor)
-                    .font(.title2)
-                    
-                    // Skip forward 10 seconds
-                    Button(action: { streamer?.seek(by: 10) }) {
-                        Image(systemName: "goforward.10")
-                    }
-                    .tint(.accentColor)
+            // Custom volume slider positioned on the right side
+            HStack {
+                Spacer()
+                VStack {
+                    CustomWatchVolumeSlider(volume: $volume)
+                        .isHidden(isCustomWatchVolumeSliderHidden, remove: true)
+                    Spacer()
                 }
             }
+            
+            // Hidden volume control for crown input (opacity = 0)
+            VolumeView()
+                .opacity(0)
         }
-        .onAppear { configureAndPlay() }
+        .onAppear { 
+            configureAndPlay()
+            setupVolumeObserver()
+        }
         .onDisappear {
             streamer?.stop()
             streamer = nil // Clean up the instance
+            volumeObserver?.invalidate()
+            volumeObserver = nil
+            controlsTimer?.invalidate()
+            controlsTimer = nil
         }
         .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
             updateUIFromStreamer()
@@ -194,6 +221,51 @@ struct AudioPlayerView: View {
         let m = s / 60
         let r = s % 60
         return String(format: "%d:%02d", m, r)
+    }
+    
+    private func setupVolumeObserver() {
+        // Initialize volume from current system volume
+        volume = Double(AVAudioSession.sharedInstance().outputVolume)
+        
+        // Set up volume observer with proper options
+        volumeObserver = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.initial, .new]) { session, change in
+            
+            print("DEBUG: Volume observer triggered - outputVolume: \(session.outputVolume)")
+            
+            // Update volume on main thread
+            DispatchQueue.main.async {
+                self.volume = Double(session.outputVolume)
+                print("DEBUG: Volume updated to: \(self.volume)")
+                self.handleVolumeSliderAppearance()
+            }
+        }
+        
+        print("DEBUG: Volume observer setup complete")
+    }
+    
+    private func handleVolumeSliderAppearance() {
+        // Ensure UI state changes occur on the main thread
+        DispatchQueue.main.async {
+            if self.isCustomWatchVolumeSliderHidden == false {
+                self.controlsTimer?.invalidate()
+                self.controlsTimer = nil
+            }
+            self.isCustomWatchVolumeSliderHidden = false
+
+            // Schedule a one-shot timer on the main run loop to hide controls after delay
+            let timer = Timer(timeInterval: 3, repeats: false) { _ in
+                // Update UI on main thread
+                DispatchQueue.main.async {
+                    if self.isCustomWatchVolumeSliderHidden == false {
+                        self.isCustomWatchVolumeSliderHidden = true
+                    }
+                    self.controlsTimer?.invalidate()
+                    self.controlsTimer = nil
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            self.controlsTimer = timer
+        }
     }
 }
 

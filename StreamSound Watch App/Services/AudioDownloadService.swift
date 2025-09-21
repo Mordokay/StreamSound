@@ -233,7 +233,11 @@ final class AudioDownloadService: ObservableObject {
 
     private func refreshItem(_ item: YouTubeAudio) async {
         do {
+            // Use the default service method (Opus up to 64 kbps) for refresh
+            // This maintains consistency with the original download settings
             let info = try await infoService.fetchInfo(for: item.originalURL)
+            
+            // Update all the existing properties
             item.title = info.title
             item.uploader = info.uploader
             item.duration = info.duration
@@ -244,8 +248,16 @@ final class AudioDownloadService: ObservableObject {
             item.expireTS = info.expireTS
             item.expireHuman = info.expireHuman
             item.preferHls = info.preferHls
+            
+            // Update the new properties from the enhanced API response
+            item.formatId = info.formatId
+            item.acodec = info.acodec
+            item.abrKbps = info.abrKbps
+            item.maxAbrRequested = info.maxAbrRequested
+            item.estimatedSizeMb = info.estimatedSizeMb
+            
             try? item.modelContext?.save()
-            print("DEBUG: Refreshed item stream before download")
+            print("DEBUG: Refreshed item stream before download with enhanced metadata")
         } catch {
             print("DEBUG: Failed to refresh item before download: \(error)")
         }

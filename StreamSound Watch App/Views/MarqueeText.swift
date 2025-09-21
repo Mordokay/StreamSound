@@ -67,7 +67,7 @@ struct MarqueeText: View {
             .offset(x: offset, y: 0)
             .animation(Animation.linear(duration: scrollDuration).repeatForever(autoreverses: false), value: animate)
             .fixedSize(horizontal: true, vertical: true)
-            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .leading)
+            .frame(height: 15)
     }
 }
 

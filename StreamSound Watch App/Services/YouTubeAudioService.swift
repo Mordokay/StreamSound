@@ -9,9 +9,40 @@ enum YouTubeAudioServiceError: Error {
 final class YouTubeAudioService {
     private let baseEndpoint = "https://mordokay.com/cgi-bin/yt_audio_info.py"
 
+    /// Fetches audio information for a YouTube URL with default settings (Opus up to 64 kbps)
+    /// - Parameter originalURLString: The YouTube URL or video ID
+    /// - Returns: YouTubeAudioInfo containing audio metadata and stream URL
     func fetchInfo(for originalURLString: String) async throws -> YouTubeAudioInfo {
+        return try await fetchInfo(for: originalURLString, maxAbr: 64, preferHls: false)
+    }
+    
+    /// Fetches audio information for a YouTube URL with custom bitrate settings
+    /// - Parameters:
+    ///   - originalURLString: The YouTube URL or video ID
+    ///   - maxAbr: Maximum audio bitrate in kbps (e.g., 48 for stricter cap, 64 for default)
+    ///   - preferHls: Whether to prefer HLS AAC variants (m3u8 format) over direct audio streams
+    /// - Returns: YouTubeAudioInfo containing audio metadata and stream URL
+    /// 
+    /// Examples:
+    /// - Default Opus up to 64 kbps: `fetchInfo(for: url)`
+    /// - Stricter 48 kbps cap: `fetchInfo(for: url, maxAbr: 48)`
+    /// - HLS AAC at 64 kbps: `fetchInfo(for: url, maxAbr: 64, preferHls: true)`
+    func fetchInfo(for originalURLString: String, maxAbr: Int, preferHls: Bool = false) async throws -> YouTubeAudioInfo {
         guard var components = URLComponents(string: baseEndpoint) else { throw YouTubeAudioServiceError.invalidURL }
-        components.queryItems = [URLQueryItem(name: "url", value: originalURLString)]
+        
+        var queryItems = [URLQueryItem(name: "url", value: originalURLString)]
+        
+        // Add max_abr parameter if specified
+        if maxAbr > 0 {
+            queryItems.append(URLQueryItem(name: "max_abr", value: String(maxAbr)))
+        }
+        
+        // Add prefer_hls parameter if requested
+        if preferHls {
+            queryItems.append(URLQueryItem(name: "prefer_hls", value: "1"))
+        }
+        
+        components.queryItems = queryItems
         guard let url = components.url else { throw YouTubeAudioServiceError.invalidURL }
 
         var request = URLRequest(url: url)
@@ -43,6 +74,10 @@ final class YouTubeAudioService {
             print("  - Uploader: \(info.uploader ?? "nil")")
             print("  - Duration: \(info.duration ?? 0)")
             print("  - Extension: \(info.ext ?? "nil")")
+            print("  - Format ID: \(info.formatId ?? "nil")")
+            print("  - Codec: \(info.acodec ?? "nil")")
+            print("  - Bitrate: \(info.abrKbps ?? 0) kbps")
+            print("  - Estimated Size: \(info.estimatedSizeMb ?? 0) MB")
             print("  - Stream URL: \(info.streamURL?.absoluteString ?? "nil")")
             print("  - Prefer HLS: \(info.preferHls ?? false)")
             

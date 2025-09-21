@@ -18,6 +18,13 @@ final class YouTubeAudio {
     var addedAt: Date
     var localFilePath: String?
     var isDownloaded: Bool { localFilePath != nil }
+    
+    // New properties from enhanced API response
+    var formatId: String?
+    var acodec: String?
+    var abrKbps: Double?
+    var maxAbrRequested: Int?
+    var estimatedSizeMb: Double?
 
     init(
         id: UUID = UUID(),
@@ -53,7 +60,7 @@ final class YouTubeAudio {
 extension YouTubeAudio {
     static func from(info: YouTubeAudioInfo) -> YouTubeAudio? {
         guard info.ok == true else { return nil }
-        return YouTubeAudio(
+        let audio = YouTubeAudio(
             originalURL: info.originalURL?.absoluteString ?? "",
             title: info.title,
             uploader: info.uploader,
@@ -66,6 +73,15 @@ extension YouTubeAudio {
             expireHuman: info.expireHuman,
             preferHls: info.preferHls
         )
+        
+        // Set the new properties
+        audio.formatId = info.formatId
+        audio.acodec = info.acodec
+        audio.abrKbps = info.abrKbps
+        audio.maxAbrRequested = info.maxAbrRequested
+        audio.estimatedSizeMb = info.estimatedSizeMb
+        
+        return audio
     }
 }
 

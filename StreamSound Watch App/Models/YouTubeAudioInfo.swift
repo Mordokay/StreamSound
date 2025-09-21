@@ -13,6 +13,11 @@ struct YouTubeAudioInfo: Codable {
     let expireHuman: String?
     let originalURL: URL?
     let preferHls: Bool?
+    let formatId: String?
+    let acodec: String?
+    let abrKbps: Double?
+    let maxAbrRequested: Int?
+    let estimatedSizeMb: Double?
 
     enum CodingKeys: String, CodingKey {
         case ok
@@ -27,6 +32,11 @@ struct YouTubeAudioInfo: Codable {
         case expireHuman = "expire_human"
         case originalURL = "original_url"
         case preferHls = "prefer_hls"
+        case formatId = "format_id"
+        case acodec
+        case abrKbps = "abr_kbps"
+        case maxAbrRequested = "max_abr_requested"
+        case estimatedSizeMb = "estimated_size_mb"
     }
 }
 

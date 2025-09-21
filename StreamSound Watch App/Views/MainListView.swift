@@ -44,16 +44,13 @@ struct MainListView: View {
                                     if let duration = item.duration {
                                         VStack {
                                             Spacer()
-                                            HStack {
-                                                Spacer()
-                                                Text(formatDuration(duration))
-                                                    .font(.system(size: 16, weight: .semibold))
-                                                    .foregroundColor(.white)
-                                                    .padding(.horizontal, 4)
-                                                    .padding(.vertical, 2)
-                                                    .background(Color.black.opacity(0.7))
-                                                    .cornerRadius(2)
-                                            }
+                                            Text(formatDuration(duration))
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 4)
+                                                .padding(.vertical, 2)
+                                                .background(Color.black.opacity(0.7))
+                                                .cornerRadius(2)
                                         }.frame(width: thumbnailWidth, height: thumbnailHeight)
                                     }
                                     
