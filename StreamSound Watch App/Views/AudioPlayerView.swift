@@ -147,6 +147,7 @@ struct AudioPlayerView: View {
                 VStack {
                     CustomWatchVolumeSlider(volume: $volume)
                         .isHidden(isCustomWatchVolumeSliderHidden, remove: true)
+                        .padding(.top, 12) // Add top padding to avoid clock overlap
                     Spacer()
                 }
             }

@@ -15,26 +15,26 @@ struct CustomWatchVolumeSlider: View {
             GeometryReader { geometry in
                 ZStack(alignment: .bottom) {
                     // Background track
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: 3)
                         .fill(Color.gray.opacity(0.3))
-                        .frame(width: 8)
+                        .frame(width: 6)
                     
                     // Progress track
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: 3)
                         .fill(Color.green)
-                        .frame(width: 8, height: geometry.size.height * volume)
+                        .frame(width: 6, height: geometry.size.height * volume)
                 }
             }
-            .frame(width: 8, height: 40)
+            .frame(width: 6, height: 35)
             
             // Volume percentage at the bottom
             Text("\(Int(volume * 100))%")
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
-        .frame(width: 40, height: 80)
+        .frame(width: 35, height: 70)
         .background(.black.opacity(0.7))
-        .cornerRadius(8)
+        .cornerRadius(6)
     }
 }
 
