@@ -22,6 +22,12 @@ struct AudioPlayerView: View {
     @State private var volumeObserver: NSKeyValueObservation?
     @State private var isCustomWatchVolumeSliderHidden: Bool = true
     @State private var controlsTimer: Timer? = nil
+    @State private var isInitialVolumeSet: Bool = false
+    
+    // Button press states for haptic feedback and colors
+    @State private var isPlayPausePressed: Bool = false
+    @State private var isSkipBackPressed: Bool = false
+    @State private var isSkipForwardPressed: Bool = false
 
     var body: some View {
         ZStack {
@@ -78,23 +84,50 @@ struct AudioPlayerView: View {
                 HStack(spacing: 4) {
                     if streamer != nil {
                         // Skip backward 10 seconds
-                        Button(action: { streamer?.seek(by: -10) }) {
+                        Button(action: { 
+                            triggerHapticFeedback()
+                            streamer?.seek(by: -10) 
+                        }) {
                             Image(systemName: "gobackward.10")
                         }
-                        .tint(.accentColor)
+                        .tint(isSkipBackPressed ? .blue.opacity(0.6) : .blue)
+                        .scaleEffect(isSkipBackPressed ? 0.9 : 1.0)
+                        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+                            withAnimation(.easeInOut(duration: 0.1)) {
+                                isSkipBackPressed = pressing
+                            }
+                        }, perform: {})
                         
                         // Play/Pause button
-                        Button(action: { streamer?.toggle() }) {
+                        Button(action: { 
+                            triggerHapticFeedback()
+                            streamer?.toggle() 
+                        }) {
                             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                         }
-                        .tint(.accentColor)
+                        .tint(isPlayPausePressed ? (isPlaying ? .red.opacity(0.6) : .green.opacity(0.6)) : (isPlaying ? .red : .green))
+                        .scaleEffect(isPlayPausePressed ? 0.9 : 1.0)
                         .font(.title2)
+                        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+                            withAnimation(.easeInOut(duration: 0.1)) {
+                                isPlayPausePressed = pressing
+                            }
+                        }, perform: {})
                         
                         // Skip forward 10 seconds
-                        Button(action: { streamer?.seek(by: 10) }) {
+                        Button(action: { 
+                            triggerHapticFeedback()
+                            streamer?.seek(by: 10) 
+                        }) {
                             Image(systemName: "goforward.10")
                         }
-                        .tint(.accentColor)
+                        .tint(isSkipForwardPressed ? .blue.opacity(0.6) : .blue)
+                        .scaleEffect(isSkipForwardPressed ? 0.9 : 1.0)
+                        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+                            withAnimation(.easeInOut(duration: 0.1)) {
+                                isSkipForwardPressed = pressing
+                            }
+                        }, perform: {})
                     }
                 }
             }
@@ -236,7 +269,14 @@ struct AudioPlayerView: View {
             DispatchQueue.main.async {
                 self.volume = Double(session.outputVolume)
                 print("DEBUG: Volume updated to: \(self.volume)")
-                self.handleVolumeSliderAppearance()
+                
+                // Only show slider if this is not the initial call
+                if self.isInitialVolumeSet {
+                    self.handleVolumeSliderAppearance()
+                } else {
+                    // Mark that initial volume has been set
+                    self.isInitialVolumeSet = true
+                }
             }
         }
         
@@ -266,6 +306,11 @@ struct AudioPlayerView: View {
             RunLoop.main.add(timer, forMode: .common)
             self.controlsTimer = timer
         }
+    }
+    
+    private func triggerHapticFeedback() {
+        // Use the same haptic feedback as the Digital Crown
+        WKInterfaceDevice.current().play(.click)
     }
 }
 
